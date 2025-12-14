@@ -1,5 +1,6 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
+import plotly.express as px
 
 
 SECTIONS = ['Açougue', 'Frios', 'Peixaria', 'Hortifrúti', 'Padaria', 'Frente de Loja', 'Docas Secas', 'Doca Fria']
@@ -7,9 +8,9 @@ REFFERENCE_WEIGHT_35KG = 20000
 REFFERENCE_WEIGHT_15KG = 10000
 
 COLOR_MAP = {
-    'OK': 'background-color: #08c73b',
-    'Tolerância': 'background-color: #a89505',
-    'Calibração': 'background-color: #a80518',
+    'OK': 'background-color: #4BBF73',
+    'Tolerância': 'background-color: #FFC107',
+    'Calibração': 'background-color: #DC3545',
     'default': ''
 }
 
@@ -17,101 +18,122 @@ COLOR_MAP = {
 def highlight_status_row(row):
     color_name = row['Status_Cor']
     style = COLOR_MAP.get(color_name, COLOR_MAP['default'])
-
     return [style] * len(row)
 
 
 def main():
-    try:
-        file = 'rel_sm541_export.csv'
-        data = pd.read_csv(file)
-    except FileNotFoundError:
-        st.error(f'Erro: O arquivo {file} não foi encontrado')
+    st.set_page_config(layout="wide")
+
+    file = st.file_uploader('Abrir Arquivo CSV', type=['csv'])
+
+    if file:
+        try:
+            data = pd.read_csv(file, index_col=False)
+        except Exception as e:
+            st.error(f"Erro ao ler o arquivo CSV: {e}")
+            return
+    else:
+        st.info("Por favor, faça o upload do arquivo de balanças CSV.")
         return
 
     st.title('Controle de Balanças')
-    col_total_scales, col_Peso, col_on_tolerance, col_need_calibration = st.columns(4)
 
-    difference_35kg = abs(data['Peso'] - REFFERENCE_WEIGHT_35KG)
-    difference_15kg = abs(data['Peso'] - REFFERENCE_WEIGHT_15KG)
+    if data is not None:
+        data.columns = data.columns.str.strip()
 
-    mask_ok = (data['Peso'] == REFFERENCE_WEIGHT_35KG) | (data['Peso'] == REFFERENCE_WEIGHT_15KG)
-    mask_35kg_tolerance = (difference_35kg >= 1) & (difference_35kg <= 5)
-    mask_15kg_tolerance = (difference_15kg >= 1) & (difference_15kg <= 5)
+        if 'Balança' in data.columns:
+            data['Balança'] = data['Balança'].fillna(0).astype(int).astype(str)
 
-    mask_35kg_calibration = difference_35kg > 5
-    mask_15kg_calibration = difference_15kg > 5
+        difference_35kg = abs(data['Peso'] - REFFERENCE_WEIGHT_35KG)
+        difference_15kg = abs(data['Peso'] - REFFERENCE_WEIGHT_15KG)
 
-    mask_tolerance = (
-        (data['Peso Máximo'] == 35000) & mask_35kg_tolerance
-    ) | (
-        (data['Peso Máximo'] == 15000) & mask_15kg_tolerance
-    )
+        mask_ok = (data['Peso'] == REFFERENCE_WEIGHT_35KG) | (data['Peso'] == REFFERENCE_WEIGHT_15KG)
 
-    mask_calibration = (
-        (data['Peso Máximo'] == 35000) & mask_35kg_calibration
-    ) | (
-        (data['Peso Máximo'] == 15000) & mask_15kg_calibration
-    )
+        mask_35kg_tolerance = (difference_35kg >= 1) & (difference_35kg <= 5)
+        mask_15kg_tolerance = (difference_15kg >= 1) & (difference_15kg <= 5)
 
-    data['Status_Cor'] = 'default'
+        mask_tolerance = (
+            (data['Peso Máximo'] == 35000) & mask_35kg_tolerance
+        ) | (
+            (data['Peso Máximo'] == 15000) & mask_15kg_tolerance
+        )
 
-    data.loc[mask_calibration, 'Status_Cor'] = 'Calibração'
-    data.loc[mask_tolerance, 'Status_Cor'] = 'Tolerância'
-    data.loc[mask_ok, 'Status_Cor'] = 'OK'
+        mask_35kg_calibration = difference_35kg > 5
+        mask_15kg_calibration = difference_15kg > 5
 
-    count_ok = len(data[mask_ok])
-    count_tolerance = len(data[mask_tolerance])
-    count_calibration = len(data[mask_calibration])
+        mask_calibration = (
+            (data['Peso Máximo'] == 35000) & mask_35kg_calibration
+        ) | (
+            (data['Peso Máximo'] == 15000) & mask_15kg_calibration
+        )
 
-    col_total_scales.metric(
-        'Total de Balanças',
-        data.shape[0],
-        border=True,
-    )
+        data['Status_Cor'] = 'default'
+        data.loc[mask_calibration, 'Status_Cor'] = 'Calibração'
+        data.loc[mask_tolerance, 'Status_Cor'] = 'Tolerância'
+        data.loc[mask_ok, 'Status_Cor'] = 'OK'
 
-    col_Peso.metric(
-        'Peso OK',
-        count_ok,
-        border=True,
-        delta=count_ok,
-        delta_color='normal'
-    )
+        count_ok = len(data[mask_ok])
+        count_tolerance = len(data[mask_tolerance])
+        count_calibration = len(data[mask_calibration])
 
-    col_on_tolerance.metric(
-        'Tolerância: ± 5g',
-        count_tolerance,
-        border=True,
-        delta=count_tolerance,
-        delta_color='off'
-    )
+        col_metrics, col_chart = st.columns([4, 6])
 
-    col_need_calibration.metric(
-        'Calibração: > 5g',
-        count_calibration,
-        border=True,
-        delta=count_calibration,
-        delta_color='inverse'
-    )
+        with col_metrics:
+            col_total_scales, col_Peso, col_on_tolerance, col_need_calibration = st.columns(4)
 
-    existing_sections = data['Setor'].unique()
-    tabs = st.tabs(SECTIONS)
+            col_total_scales.metric('Total', data.shape[0], border=True)
+            col_Peso.metric('OK', count_ok, border=True)
+            col_on_tolerance.metric('± 5g', count_tolerance, border=True)
+            col_need_calibration.metric('> 5g', count_calibration, border=True)
 
-    for i, section in enumerate(SECTIONS):
-        if section in existing_sections:
-            with tabs[i]:
-                st.subheader(section)
+        with col_chart:
+            df_chart = pd.DataFrame({
+                'Status': ['OK', 'Tolerância', 'Calibração'],
+                'Contagem': [count_ok, count_tolerance, count_calibration]
+            })
 
-                df_section = data[data['Setor'] == section]
-                df_estilized = df_section.style.apply(highlight_status_row, axis=1).hide(axis=1, subset=['Status_Cor'])
+            color_discrete_map = {
+                'OK': '#4BBF73',
+                'Tolerância': '#FFC107',
+                'Calibração': '#DC3545'
+            }
 
-                st.dataframe(
-                    df_estilized,
-                    width='stretch'
-                )
-        else:
-            with tabs[i]:
-                st.info(f'Nenhuma balança encontrada para o setor: **{section}**')
+            fig = px.pie(
+                df_chart,
+                values='Contagem',
+                names='Status',
+                title='Distribuição do Status das Balanças',
+                color='Status',
+                color_discrete_map=color_discrete_map
+            )
+
+            fig.update_layout(margin=dict(l=0, r=0, t=30, b=0), showlegend=True)
+            fig.update_traces(textposition='inside', textinfo='percent+value')
+
+            st.plotly_chart(fig, width='stretch')
+
+        existing_sections = data['Setor'].unique()
+
+        tabs = st.tabs(SECTIONS)
+
+        for i, section in enumerate(SECTIONS):
+            if section in existing_sections:
+                with tabs[i]:
+                    st.subheader(section)
+                    df_section = data[data['Setor'] == section]
+
+                    format_dict = {
+                        'Peso': lambda x: '{:,.0f}'.format(x).replace(',', '.'),
+                        'Peso Máximo': lambda x: '{:,.0f}'.format(x).replace(',', '.')
+                    }
+
+                    df_estilizado = df_section.style.apply(
+                        highlight_status_row, axis=1).format(format_dict).hide(axis=1, subset=['Status_Cor'])
+
+                    st.dataframe(df_estilizado, width='stretch')
+            else:
+                with tabs[i]:
+                    st.info(f'Nenhuma balança encontrada para o setor: **{section}**')
 
 
 if __name__ == '__main__':
