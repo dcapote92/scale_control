@@ -3,7 +3,7 @@ import streamlit as st
 import plotly.express as px
 
 
-SECTIONS = ['Açougue', 'Frios', 'Peixaria', 'Hortifrúti', 'Padaria', 'Frente de Loja', 'Docas Secas', 'Doca Fria']
+SECTIONS = ['Para Revisão', 'Açougue', 'Frios', 'Peixaria', 'Hortifrúti', 'Padaria', 'Frente de Loja', 'Docas Secas', 'Doca Fria']
 REFFERENCE_WEIGHT_35KG = 20000
 REFFERENCE_WEIGHT_15KG = 10000
 
@@ -72,6 +72,9 @@ def main():
         data.loc[mask_tolerance, 'Status_Cor'] = 'Tolerância'
         data.loc[mask_ok, 'Status_Cor'] = 'OK'
 
+        mask_to_review = data['Status_Cor'].isin(['Tolerância', 'Calibração'])
+        data_to_review = data[mask_to_review].copy()
+
         count_ok = len(data[mask_ok])
         count_tolerance = len(data[mask_tolerance])
         count_calibration = len(data[mask_calibration])
@@ -117,7 +120,25 @@ def main():
         tabs = st.tabs(SECTIONS)
 
         for i, section in enumerate(SECTIONS):
-            if section in existing_sections:
+            if section == 'Para Revisão':
+                df_section = data_to_review
+                if not df_section.empty:
+                    with tabs[i]:
+                        st.subheader(section)
+                        format_dict = {
+                            'Peso': lambda x: '{:,.0f}'.format(x).replace(',', '.'),
+                            'Peso Máximo': lambda x: '{:,.0f}'.format(x).replace(',', '.')
+                        }
+
+                        df_estilizado = df_section.style.apply(
+                            highlight_status_row, axis=1).format(format_dict).hide(axis=1, subset=['Status_Cor'])
+
+                        st.dataframe(df_estilizado, width='stretch')
+                else:
+                    with tabs[i]:
+                        st.info('🎉 Nenhuma balança precisa de **Revisão/Calibração** no momento. Todas OK!')
+
+            elif section in existing_sections:
                 with tabs[i]:
                     st.subheader(section)
                     df_section = data[data['Setor'] == section]
